@@ -9,7 +9,6 @@ import chardet
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.cidfonts import UnicodeCIDFont
-from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas
 
 
@@ -72,24 +71,7 @@ def mm(value: float) -> float:
 
 
 def register_fonts() -> tuple[str, str]:
-    regular_name = "NovelSong"
-    bold_name = "NovelSongBold"
-    candidates = [
-        r"C:\Windows\Fonts\simsun.ttc",
-        r"C:\Windows\Fonts\simfang.ttf",
-        r"C:\Windows\Fonts\msyh.ttc",
-    ]
-
-    for font_path in candidates:
-        if not os.path.exists(font_path):
-            continue
-        try:
-            pdfmetrics.registerFont(TTFont(regular_name, font_path))
-            pdfmetrics.registerFont(TTFont(bold_name, font_path))
-            return regular_name, bold_name
-        except Exception:
-            continue
-
+    # Built-in CID Chinese font avoids garbled glyph mapping in generated PDFs.
     pdfmetrics.registerFont(UnicodeCIDFont("STSong-Light"))
     return "STSong-Light", "STSong-Light"
 
@@ -232,7 +214,7 @@ class PdfWriter:
         if len(first_lines) <= 1:
             lines = [(first_lines[0], indent_width)]
         else:
-            rest_text = text[len(first_lines[0]) :]
+            rest_text = text.removeprefix(first_lines[0])
             rest_lines = wrap_text(rest_text, self.column_width, FONT_NAME, self.mode.font_size)
             lines = [(first_lines[0], indent_width)] + [(line, 0) for line in rest_lines]
 
