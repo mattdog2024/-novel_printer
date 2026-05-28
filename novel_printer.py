@@ -13,6 +13,9 @@ from reportlab.pdfgen import canvas
 
 
 APP_TITLE = "小说 A4 自动排版打印工具"
+OUTPUT_BOOKLET = "小册子打印"
+OUTPUT_TWO_COLUMN = "A4 两栏直接打印"
+OUTPUT_OPTIONS = [OUTPUT_BOOKLET, OUTPUT_TWO_COLUMN]
 ENCODING_AUTO = "自动识别"
 ENCODING_OPTIONS = [
     ENCODING_AUTO,
@@ -194,45 +197,58 @@ def wrap_text(text: str, max_width: float, font_name: str, font_size: float) -> 
 
 
 class PdfWriter:
-    def __init__(self, output_path: str, mode: LayoutMode):
+    def __init__(self, output_path: str, mode: LayoutMode, output_type: str):
         self.output_path = output_path
         self.mode = mode
-        self.page_width, self.page_height = landscape(A4)
+        self.output_type = output_type
+        self.is_booklet = output_type == OUTPUT_BOOKLET
+        self.page_width, self.page_height = self.page_size()
         self.margin = mm(mode.margin_mm)
-        self.column_gap = mm(mode.column_gap_mm)
-        self.column_width = (self.page_width - self.margin * 2 - self.column_gap) / 2
+        self.column_count = 1 if self.is_booklet else 2
+        self.column_gap = 0 if self.is_booklet else mm(mode.column_gap_mm)
+        self.column_width = (self.page_width - self.margin * 2 - self.column_gap * (self.column_count - 1)) / self.column_count
         self.top = self.page_height - self.margin
         self.bottom = self.margin + mm(6)
         self.line_height = mode.font_size * mode.line_spacing + 1.2
-        self.sheet_number = 0
+        self.page_number = 0
         self.column = 0
         self.y = self.top
-        self.column_used = [False, False]
+        self.column_used = [False] * self.column_count
         self.canvas = canvas.Canvas(output_path, pagesize=(self.page_width, self.page_height))
         self.new_page()
 
+    def page_size(self):
+        if self.is_booklet:
+            width, height = landscape(A4)
+            return width / 2, height
+        return landscape(A4)
+
     def new_page(self):
-        if self.sheet_number:
+        if self.page_number:
             self.draw_footer()
             self.canvas.showPage()
-        self.sheet_number += 1
+        self.page_number += 1
         self.column = 0
         self.y = self.top
-        self.column_used = [False, False]
+        self.column_used = [False] * self.column_count
         self.canvas.setTitle(os.path.basename(self.output_path))
 
     def draw_footer(self):
         self.canvas.setFont(FONT_NAME, 7)
+        if self.is_booklet:
+            if self.column_used[0]:
+                self.canvas.drawCentredString(self.page_width / 2, mm(5), str(self.page_number))
+            return
         for column_index, was_used in enumerate(self.column_used):
             if not was_used:
                 continue
-            booklet_page = (self.sheet_number - 1) * 2 + column_index + 1
+            booklet_page = (self.page_number - 1) * 2 + column_index + 1
             column_x = self.margin + column_index * (self.column_width + self.column_gap)
             self.canvas.drawCentredString(column_x + self.column_width / 2, mm(5), str(booklet_page))
 
     def next_column_or_page(self):
-        if self.column == 0:
-            self.column = 1
+        if self.column < self.column_count - 1:
+            self.column += 1
             self.y = self.top
         else:
             self.new_page()
@@ -281,21 +297,27 @@ class PdfWriter:
         self.canvas.save()
 
 
-def build_pdf(txt_path: str, output_path: str, mode_name: str, encoding_choice: str = ENCODING_AUTO) -> tuple[int, int, str]:
+def build_pdf(
+    txt_path: str,
+    output_path: str,
+    mode_name: str,
+    encoding_choice: str = ENCODING_AUTO,
+    output_type: str = OUTPUT_BOOKLET,
+) -> tuple[int, int, str]:
     mode = MODES[mode_name]
     text, used_encoding = read_txt(txt_path, encoding_choice)
     lines = clean_text(text)
     if not lines:
         raise ValueError("这个 TXT 里没有读到正文。")
 
-    writer = PdfWriter(output_path, mode)
+    writer = PdfWriter(output_path, mode, output_type)
     for line in lines:
         if is_chapter_title(line):
             writer.draw_heading(line)
         else:
             writer.draw_paragraph(line)
     writer.save()
-    return len(lines), writer.sheet_number, used_encoding
+    return len(lines), writer.page_number, used_encoding
 
 
 def open_file(path: str):
@@ -310,11 +332,12 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title(APP_TITLE)
-        self.geometry("720x420")
-        self.minsize(680, 390)
+        self.geometry("760x500")
+        self.minsize(720, 470)
         self.txt_path = tk.StringVar()
         self.output_path = tk.StringVar()
         self.mode_name = tk.StringVar(value="黄金设置")
+        self.output_type = tk.StringVar(value=OUTPUT_BOOKLET)
         self.encoding_name = tk.StringVar(value=ENCODING_AUTO)
         self.status = tk.StringVar(value="请选择一个 TXT 小说文件。")
         self.create_widgets()
@@ -326,7 +349,7 @@ class App(tk.Tk):
         title = ttk.Label(root, text=APP_TITLE, font=("Microsoft YaHei UI", 18, "bold"))
         title.pack(anchor="w")
 
-        subtitle = ttk.Label(root, text="默认使用 A4 横向、两栏、窄边距、宋体、单倍行距。生成 PDF 后就可以打印。")
+        subtitle = ttk.Label(root, text="默认生成适合打印窗口“小册子”功能的 PDF，也可以切换成 A4 两栏直接打印。")
         subtitle.pack(anchor="w", pady=(4, 16))
 
         file_row = ttk.Frame(root)
@@ -348,6 +371,21 @@ class App(tk.Tk):
         encoding_box.pack(side="left")
         ttk.Button(encoding_row, text="预览原文", command=self.preview_text).pack(side="left", padx=8)
         ttk.Label(encoding_row, text="如果预览乱码，先换 GB18030 或 GBK。").pack(side="left")
+
+        output_type_frame = ttk.LabelFrame(root, text="打印方式", padding=12)
+        output_type_frame.pack(fill="x", pady=12)
+        ttk.Radiobutton(
+            output_type_frame,
+            text="小册子打印：生成单页 PDF，打印时直接选择“小册子”。",
+            variable=self.output_type,
+            value=OUTPUT_BOOKLET,
+        ).pack(anchor="w", pady=3)
+        ttk.Radiobutton(
+            output_type_frame,
+            text="A4 两栏直接打印：一张 A4 已经排成左右两栏。",
+            variable=self.output_type,
+            value=OUTPUT_TWO_COLUMN,
+        ).pack(anchor="w", pady=3)
 
         mode_frame = ttk.LabelFrame(root, text="排版模式", padding=12)
         mode_frame.pack(fill="x", pady=12)
@@ -415,6 +453,7 @@ class App(tk.Tk):
                 output_path,
                 self.mode_name.get(),
                 self.encoding_name.get(),
+                self.output_type.get(),
             )
             self.status.set(f"生成完成：使用 {used_encoding}，共处理 {line_count} 行正文，PDF 共 {page_count} 页。")
             messagebox.showinfo(APP_TITLE, f"PDF 已生成。\n\n编码：{used_encoding}\n页数：{page_count}\n位置：{output_path}")
