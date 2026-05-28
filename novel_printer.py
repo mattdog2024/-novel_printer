@@ -13,6 +13,16 @@ from reportlab.pdfgen import canvas
 
 
 APP_TITLE = "小说 A4 自动排版打印工具"
+ENCODING_AUTO = "自动识别"
+ENCODING_OPTIONS = [
+    ENCODING_AUTO,
+    "GB18030",
+    "GBK",
+    "UTF-8",
+    "UTF-8-BOM",
+    "UTF-16",
+    "BIG5",
+]
 
 
 @dataclass(frozen=True)
@@ -79,23 +89,56 @@ def register_fonts() -> tuple[str, str]:
 FONT_NAME, FONT_BOLD_NAME = register_fonts()
 
 
-def read_txt(path: str) -> str:
+def text_score(text: str) -> float:
+    if not text:
+        return -999999
+    sample = text[:20000]
+    cjk = sum(1 for char in sample if "\u4e00" <= char <= "\u9fff")
+    common = sum(1 for char in sample if char in "的一是在不了有和人这中大为上个国我以要他")
+    bad = sum(1 for char in sample if char in "\ufffd锟斤拷")
+    controls = sum(1 for char in sample if ord(char) < 32 and char not in "\r\n\t")
+    latin = sum(1 for char in sample if "\u00c0" <= char <= "\u00ff")
+    return cjk * 4 + common * 8 - bad * 80 - controls * 20 - latin * 3
+
+
+def decode_with_encoding(raw: bytes, encoding: str) -> str:
+    if encoding == "UTF-8-BOM":
+        encoding = "utf-8-sig"
+    return raw.decode(encoding, errors="replace")
+
+
+def read_txt(path: str, encoding_choice: str = ENCODING_AUTO) -> tuple[str, str]:
     with open(path, "rb") as file:
         raw = file.read()
 
+    if encoding_choice != ENCODING_AUTO:
+        return decode_with_encoding(raw, encoding_choice), encoding_choice
+
     if raw.startswith(b"\xef\xbb\xbf"):
-        return raw.decode("utf-8-sig", errors="ignore")
+        return raw.decode("utf-8-sig", errors="replace"), "UTF-8-BOM"
     if raw.startswith(b"\xff\xfe") or raw.startswith(b"\xfe\xff"):
-        return raw.decode("utf-16", errors="ignore")
+        return raw.decode("utf-16", errors="replace"), "UTF-16"
 
     guess = chardet.detect(raw)
-    encoding = guess.get("encoding") or "utf-8"
-    for candidate in [encoding, "utf-8", "gb18030", "gbk", "big5"]:
+    guessed_encoding = guess.get("encoding")
+    candidates = ["gb18030", "gbk", "utf-8", "utf-8-sig", "utf-16", "big5"]
+    if guessed_encoding:
+        candidates.append(guessed_encoding)
+
+    best_text = ""
+    best_encoding = "gb18030"
+    best_score = -999999
+    for candidate in dict.fromkeys(candidates):
         try:
-            return raw.decode(candidate, errors="ignore")
+            text = raw.decode(candidate, errors="replace")
         except Exception:
-            pass
-    return raw.decode("utf-8", errors="ignore")
+            continue
+        score = text_score(text)
+        if score > best_score:
+            best_text = text
+            best_encoding = candidate
+            best_score = score
+    return best_text, best_encoding.upper()
 
 
 def clean_text(text: str) -> list[str]:
@@ -229,9 +272,10 @@ class PdfWriter:
         self.canvas.save()
 
 
-def build_pdf(txt_path: str, output_path: str, mode_name: str) -> tuple[int, int]:
+def build_pdf(txt_path: str, output_path: str, mode_name: str, encoding_choice: str = ENCODING_AUTO) -> tuple[int, int, str]:
     mode = MODES[mode_name]
-    lines = clean_text(read_txt(txt_path))
+    text, used_encoding = read_txt(txt_path, encoding_choice)
+    lines = clean_text(text)
     if not lines:
         raise ValueError("这个 TXT 里没有读到正文。")
 
@@ -242,7 +286,7 @@ def build_pdf(txt_path: str, output_path: str, mode_name: str) -> tuple[int, int
         else:
             writer.draw_paragraph(line)
     writer.save()
-    return len(lines), writer.page_number
+    return len(lines), writer.page_number, used_encoding
 
 
 def open_file(path: str):
@@ -262,6 +306,7 @@ class App(tk.Tk):
         self.txt_path = tk.StringVar()
         self.output_path = tk.StringVar()
         self.mode_name = tk.StringVar(value="黄金设置")
+        self.encoding_name = tk.StringVar(value=ENCODING_AUTO)
         self.status = tk.StringVar(value="请选择一个 TXT 小说文件。")
         self.create_widgets()
 
@@ -280,6 +325,20 @@ class App(tk.Tk):
         ttk.Label(file_row, text="小说文件", width=10).pack(side="left")
         ttk.Entry(file_row, textvariable=self.txt_path).pack(side="left", fill="x", expand=True, padx=8)
         ttk.Button(file_row, text="选择 TXT", command=self.choose_txt).pack(side="left")
+
+        encoding_row = ttk.Frame(root)
+        encoding_row.pack(fill="x", pady=6)
+        ttk.Label(encoding_row, text="文字编码", width=10).pack(side="left")
+        encoding_box = ttk.Combobox(
+            encoding_row,
+            textvariable=self.encoding_name,
+            values=ENCODING_OPTIONS,
+            state="readonly",
+            width=16,
+        )
+        encoding_box.pack(side="left")
+        ttk.Button(encoding_row, text="预览原文", command=self.preview_text).pack(side="left", padx=8)
+        ttk.Label(encoding_row, text="如果预览乱码，先换 GB18030 或 GBK。").pack(side="left")
 
         mode_frame = ttk.LabelFrame(root, text="排版模式", padding=12)
         mode_frame.pack(fill="x", pady=12)
@@ -316,7 +375,7 @@ class App(tk.Tk):
         self.txt_path.set(path)
         base = os.path.splitext(path)[0] + "_A4排版.pdf"
         self.output_path.set(base)
-        self.status.set("已选择 TXT。点“生成 PDF”就可以排版。")
+        self.refresh_encoding_preview()
 
     def choose_output(self):
         initial = self.output_path.get() or "小说_A4排版.pdf"
@@ -342,9 +401,14 @@ class App(tk.Tk):
         try:
             self.status.set("正在排版，请稍等。")
             self.update_idletasks()
-            line_count, page_count = build_pdf(txt_path, output_path, self.mode_name.get())
-            self.status.set(f"生成完成：共处理 {line_count} 行正文，PDF 共 {page_count} 页。双面打印时在打印窗口选择“双面”。")
-            messagebox.showinfo(APP_TITLE, f"PDF 已生成。\n\n页数：{page_count}\n位置：{output_path}")
+            line_count, page_count, used_encoding = build_pdf(
+                txt_path,
+                output_path,
+                self.mode_name.get(),
+                self.encoding_name.get(),
+            )
+            self.status.set(f"生成完成：使用 {used_encoding}，共处理 {line_count} 行正文，PDF 共 {page_count} 页。")
+            messagebox.showinfo(APP_TITLE, f"PDF 已生成。\n\n编码：{used_encoding}\n页数：{page_count}\n位置：{output_path}")
         except Exception as exc:
             self.status.set("生成失败，请换一个 TXT 或重新选择保存位置。")
             messagebox.showerror(APP_TITLE, f"生成失败：{exc}")
@@ -366,6 +430,32 @@ class App(tk.Tk):
             self.status.set("已打开打印。双面打印需要在打印窗口里选择“双面打印”。")
         except Exception as exc:
             messagebox.showerror(APP_TITLE, f"打开打印失败：{exc}")
+
+    def refresh_encoding_preview(self):
+        txt_path = self.txt_path.get().strip()
+        if not txt_path or not os.path.exists(txt_path):
+            return
+        try:
+            text, used_encoding = read_txt(txt_path, self.encoding_name.get())
+            lines = clean_text(text)
+            preview = "\n".join(lines[:3]) if lines else "没有读到正文。"
+            self.status.set(f"已选择 TXT。当前读取方式：{used_encoding}。预览：{preview[:120]}")
+        except Exception as exc:
+            self.status.set(f"读取失败：{exc}")
+
+    def preview_text(self):
+        txt_path = self.txt_path.get().strip()
+        if not txt_path or not os.path.exists(txt_path):
+            messagebox.showwarning(APP_TITLE, "请先选择 TXT 小说文件。")
+            return
+        try:
+            text, used_encoding = read_txt(txt_path, self.encoding_name.get())
+            lines = clean_text(text)
+            preview = "\n".join(lines[:20]) if lines else "没有读到正文。"
+            self.status.set(f"当前读取方式：{used_encoding}。如果这里正常，生成 PDF 就会正常。")
+            messagebox.showinfo(APP_TITLE, f"当前读取方式：{used_encoding}\n\n{preview[:1200]}")
+        except Exception as exc:
+            messagebox.showerror(APP_TITLE, f"预览失败：{exc}")
 
 
 if __name__ == "__main__":
