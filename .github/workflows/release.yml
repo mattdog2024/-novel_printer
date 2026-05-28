@@ -31,18 +31,19 @@ jobs:
       - name: Build exe
         run: |
           pyinstaller --noconfirm --onefile --windowed --name "NovelA4Printer" novel_printer.py
+          Copy-Item dist\NovelA4Printer.exe "dist\NovelA4Printer-${{ github.ref_name }}.exe"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: NovelA4Printer
-          path: dist/NovelA4Printer.exe
+          name: NovelA4Printer-${{ github.ref_name }}
+          path: dist/NovelA4Printer-${{ github.ref_name }}.exe
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/NovelA4Printer.exe
+          files: dist/NovelA4Printer-${{ github.ref_name }}.exe
           name: 小说 A4 自动排版打印工具 ${{ github.ref_name }}
           body: |
             第一版发布。

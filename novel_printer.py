@@ -204,24 +204,31 @@ class PdfWriter:
         self.top = self.page_height - self.margin
         self.bottom = self.margin + mm(6)
         self.line_height = mode.font_size * mode.line_spacing + 1.2
-        self.page_number = 0
+        self.sheet_number = 0
         self.column = 0
         self.y = self.top
+        self.column_used = [False, False]
         self.canvas = canvas.Canvas(output_path, pagesize=(self.page_width, self.page_height))
         self.new_page()
 
     def new_page(self):
-        if self.page_number:
+        if self.sheet_number:
             self.draw_footer()
             self.canvas.showPage()
-        self.page_number += 1
+        self.sheet_number += 1
         self.column = 0
         self.y = self.top
+        self.column_used = [False, False]
         self.canvas.setTitle(os.path.basename(self.output_path))
 
     def draw_footer(self):
         self.canvas.setFont(FONT_NAME, 7)
-        self.canvas.drawCentredString(self.page_width / 2, mm(5), str(self.page_number))
+        for column_index, was_used in enumerate(self.column_used):
+            if not was_used:
+                continue
+            booklet_page = (self.sheet_number - 1) * 2 + column_index + 1
+            column_x = self.margin + column_index * (self.column_width + self.column_gap)
+            self.canvas.drawCentredString(column_x + self.column_width / 2, mm(5), str(booklet_page))
 
     def next_column_or_page(self):
         if self.column == 0:
@@ -238,6 +245,7 @@ class PdfWriter:
             self.next_column_or_page()
 
     def draw_heading(self, text: str):
+        self.column_used[self.column] = True
         heading_size = self.mode.font_size + 1.2
         lines = wrap_text(text, self.column_width, FONT_BOLD_NAME, heading_size)
         needed = len(lines) * (heading_size + 2) + self.line_height * 0.8
@@ -264,6 +272,7 @@ class PdfWriter:
         self.canvas.setFont(FONT_NAME, self.mode.font_size)
         for line, indent in lines:
             self.ensure_space(self.line_height)
+            self.column_used[self.column] = True
             self.canvas.drawString(self.x_for_column() + indent, self.y, line)
             self.y -= self.line_height
 
@@ -286,7 +295,7 @@ def build_pdf(txt_path: str, output_path: str, mode_name: str, encoding_choice: 
         else:
             writer.draw_paragraph(line)
     writer.save()
-    return len(lines), writer.page_number, used_encoding
+    return len(lines), writer.sheet_number, used_encoding
 
 
 def open_file(path: str):
