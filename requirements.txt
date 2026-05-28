@@ -1,0 +1,2 @@
+chardet==7.4.3
+reportlab==4.5.1

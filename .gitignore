@@ -3,5 +3,4 @@ build/
 dist/
 *.spec
 *.pdf
-*.txt
 .venv/
