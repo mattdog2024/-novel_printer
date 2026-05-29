@@ -13,6 +13,7 @@ from reportlab.pdfgen import canvas
 
 
 APP_TITLE = "小说 A4 自动排版打印工具"
+APP_ICON_PATH = os.path.join(getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__))), "assets", "icon.ico")
 OUTPUT_BOOKLET = "小册子打印"
 OUTPUT_TWO_COLUMN = "A4 两栏直接打印"
 OUTPUT_OPTIONS = [OUTPUT_BOOKLET, OUTPUT_TWO_COLUMN]
@@ -332,6 +333,8 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title(APP_TITLE)
+        if os.path.exists(APP_ICON_PATH):
+            self.iconbitmap(APP_ICON_PATH)
         self.geometry("760x500")
         self.minsize(720, 470)
         self.txt_path = tk.StringVar()

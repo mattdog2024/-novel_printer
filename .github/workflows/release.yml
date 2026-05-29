@@ -30,7 +30,7 @@ jobs:
 
       - name: Build exe
         run: |
-          pyinstaller --noconfirm --onefile --windowed --name "NovelA4Printer" novel_printer.py
+          pyinstaller --noconfirm --onefile --windowed --name "NovelA4Printer" --icon "assets/icon.ico" --add-data "assets/icon.ico;assets" novel_printer.py
           Copy-Item dist\NovelA4Printer.exe "dist\NovelA4Printer-${{ github.ref_name }}.exe"
 
       - name: Upload artifact
