@@ -28,30 +28,100 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
-      - name: Build exe
+      - name: Build portable exe
         run: |
           pyinstaller --noconfirm --onefile --windowed --name "NovelA4Printer" --icon "assets/icon.ico" --add-data "assets/icon.ico;assets" novel_printer.py
           Copy-Item dist\NovelA4Printer.exe "dist\NovelA4Printer-${{ github.ref_name }}.exe"
+
+      - name: Create installer script
+        shell: pwsh
+        run: |
+          @'
+          #define MyAppName "小说 A4 自动排版打印工具"
+          #define MyAppVersion "${{ github.ref_name }}"
+          #define MyAppPublisher "Mattdog"
+          #define MyAppExeName "NovelA4Printer.exe"
+
+          [Setup]
+          AppId={{E4DCE295-8C7F-43E8-A005-A4A4A4A4A4A4}}
+          AppName={#MyAppName}
+          AppVersion={#MyAppVersion}
+          AppPublisher={#MyAppPublisher}
+          DefaultDirName={autopf}\NovelA4Printer
+          DefaultGroupName={#MyAppName}
+          DisableProgramGroupPage=yes
+          OutputDir=dist
+          OutputBaseFilename=NovelA4Printer-Setup-${{ github.ref_name }}
+          SetupIconFile=assets\icon.ico
+          Compression=lzma
+          SolidCompression=yes
+          WizardStyle=modern
+
+          [Languages]
+          Name: "chinesesimp"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
+
+          [Tasks]
+          Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: "附加任务："; Flags: unchecked
+
+          [Files]
+          Source: "dist\NovelA4Printer.exe"; DestDir: "{app}"; Flags: ignoreversion
+
+          [Icons]
+          Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
+          Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+
+          [Run]
+          Filename: "{app}\{#MyAppExeName}"; Description: "启动 {#MyAppName}"; Flags: nowait postinstall skipifsilent
+          '@ | Set-Content -Encoding UTF8 installer.iss
+
+      - name: Build installer
+        uses: Minionguyjpro/Inno-Setup-Action@v1.2.2
+        with:
+          path: installer.iss
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: NovelA4Printer-${{ github.ref_name }}
-          path: dist/NovelA4Printer-${{ github.ref_name }}.exe
+          path: |
+            dist/NovelA4Printer-${{ github.ref_name }}.exe
+            dist/NovelA4Printer-Setup-${{ github.ref_name }}.exe
+            assets/icon.png
+            assets/release-screenshot.svg
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/NovelA4Printer-${{ github.ref_name }}.exe
+          files: |
+            dist/NovelA4Printer-${{ github.ref_name }}.exe
+            dist/NovelA4Printer-Setup-${{ github.ref_name }}.exe
+            assets/icon.png
+            assets/release-screenshot.svg
           name: 小说 A4 自动排版打印工具 ${{ github.ref_name }}
           body: |
-            第一版发布。
+            ## 小说 A4 自动排版打印工具 ${{ github.ref_name }}
 
-            功能：
-            - TXT 小说自动排版成 A4 横向两栏 PDF
-            - 默认黄金设置
-            - 支持省纸模式、舒适阅读模式
-            - 自动清理多余空行
+            ![软件截图](https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/assets/release-screenshot.svg)
+
+            这是一个用于把 TXT 小说自动排版成 A4 打印 PDF 的 Windows 小工具。
+
+            ### 下载
+
+            - `NovelA4Printer-${{ github.ref_name }}.exe`：绿色单文件版，下载后双击运行。
+            - `NovelA4Printer-Setup-${{ github.ref_name }}.exe`：Windows 安装包，带开始菜单快捷方式，可选桌面快捷方式。
+
+            ### 主要功能
+
+            - TXT 小说自动排版成 PDF
+            - 默认适配“小册子打印”
+            - 支持 A4 横向两栏直接打印
+            - 支持黄金设置、省纸模式、舒适阅读模式
+            - 支持自动识别和手动选择中文编码
+            - 自动清理多余空行和常见广告行
             - 章节标题自动居中
-            - 可打开 PDF 或调起打印
+            - 新增应用图标与更清爽的界面
+
+            ### 使用提示
+
+            如果预览文字乱码，请在软件中把编码切换为 `GB18030` 或 `GBK` 后再试。

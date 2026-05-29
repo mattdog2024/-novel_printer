@@ -13,7 +13,10 @@ from reportlab.pdfgen import canvas
 
 
 APP_TITLE = "小说 A4 自动排版打印工具"
-APP_ICON_PATH = os.path.join(getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__))), "assets", "icon.ico")
+APP_VERSION = "1.1.0"
+APP_DISPLAY_NAME = f"{APP_TITLE} v{APP_VERSION}"
+BASE_DIR = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+APP_ICON_PATH = os.path.join(BASE_DIR, "assets", "icon.ico")
 OUTPUT_BOOKLET = "小册子打印"
 OUTPUT_TWO_COLUMN = "A4 两栏直接打印"
 OUTPUT_OPTIONS = [OUTPUT_BOOKLET, OUTPUT_TWO_COLUMN]
@@ -332,37 +335,74 @@ def print_file(path: str):
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title(APP_TITLE)
+        self.title(APP_DISPLAY_NAME)
         if os.path.exists(APP_ICON_PATH):
             self.iconbitmap(APP_ICON_PATH)
-        self.geometry("760x500")
-        self.minsize(720, 470)
+        self.geometry("860x620")
+        self.minsize(800, 560)
+        self.configure(bg="#eef4fb")
+
         self.txt_path = tk.StringVar()
         self.output_path = tk.StringVar()
         self.mode_name = tk.StringVar(value="黄金设置")
         self.output_type = tk.StringVar(value=OUTPUT_BOOKLET)
         self.encoding_name = tk.StringVar(value=ENCODING_AUTO)
-        self.status = tk.StringVar(value="请选择一个 TXT 小说文件。")
+        self.status = tk.StringVar(value="请选择一个 TXT 小说文件，随后一键生成适合打印的 PDF。")
+
+        self.configure_styles()
         self.create_widgets()
 
+    def configure_styles(self):
+        self.style = ttk.Style(self)
+        try:
+            self.style.theme_use("clam")
+        except tk.TclError:
+            pass
+
+        self.style.configure("App.TFrame", background="#eef4fb")
+        self.style.configure("Card.TFrame", background="#ffffff", relief="flat")
+        self.style.configure("Hero.TFrame", background="#245fbd")
+        self.style.configure("HeroTitle.TLabel", background="#245fbd", foreground="#ffffff", font=("Microsoft YaHei UI", 22, "bold"))
+        self.style.configure("HeroSubtitle.TLabel", background="#245fbd", foreground="#dcecff", font=("Microsoft YaHei UI", 10))
+        self.style.configure("Version.TLabel", background="#245fbd", foreground="#b9d7ff", font=("Microsoft YaHei UI", 9))
+        self.style.configure("Section.TLabelframe", background="#ffffff", bordercolor="#d8e3f0", relief="solid")
+        self.style.configure("Section.TLabelframe.Label", background="#ffffff", foreground="#1f3556", font=("Microsoft YaHei UI", 11, "bold"))
+        self.style.configure("TLabel", background="#ffffff", foreground="#26364d", font=("Microsoft YaHei UI", 10))
+        self.style.configure("Hint.TLabel", background="#ffffff", foreground="#6f7f95", font=("Microsoft YaHei UI", 9))
+        self.style.configure("Status.TLabel", background="#e8f2ff", foreground="#245a8d", padding=(12, 9), font=("Microsoft YaHei UI", 9))
+        self.style.configure("TEntry", padding=7)
+        self.style.configure("TCombobox", padding=5)
+        self.style.configure("TButton", font=("Microsoft YaHei UI", 10), padding=(12, 7))
+        self.style.configure("Accent.TButton", font=("Microsoft YaHei UI", 11, "bold"), padding=(18, 9), foreground="#ffffff", background="#2f75d6")
+        self.style.map("Accent.TButton", background=[("active", "#245fbd"), ("pressed", "#1d4f9e")])
+
     def create_widgets(self):
-        root = ttk.Frame(self, padding=18)
+        root = ttk.Frame(self, padding=18, style="App.TFrame")
         root.pack(fill="both", expand=True)
 
-        title = ttk.Label(root, text=APP_TITLE, font=("Microsoft YaHei UI", 18, "bold"))
-        title.pack(anchor="w")
+        hero = ttk.Frame(root, padding=(24, 18), style="Hero.TFrame")
+        hero.pack(fill="x")
+        ttk.Label(hero, text=APP_TITLE, style="HeroTitle.TLabel").pack(anchor="w")
+        ttk.Label(
+            hero,
+            text="把 TXT 小说自动排成适合 A4 双面打印的小册子 PDF，也支持 A4 横向两栏直接打印。",
+            style="HeroSubtitle.TLabel",
+        ).pack(anchor="w", pady=(6, 0))
+        ttk.Label(hero, text=f"Version {APP_VERSION}", style="Version.TLabel").pack(anchor="w", pady=(8, 0))
 
-        subtitle = ttk.Label(root, text="默认生成适合打印窗口“小册子”功能的 PDF，也可以切换成 A4 两栏直接打印。")
-        subtitle.pack(anchor="w", pady=(4, 16))
+        card = ttk.Frame(root, padding=18, style="Card.TFrame")
+        card.pack(fill="both", expand=True, pady=(14, 0))
 
-        file_row = ttk.Frame(root)
-        file_row.pack(fill="x", pady=6)
+        file_frame = ttk.LabelFrame(card, text="1. 选择小说与编码", padding=14, style="Section.TLabelframe")
+        file_frame.pack(fill="x")
+        file_row = ttk.Frame(file_frame, style="Card.TFrame")
+        file_row.pack(fill="x", pady=(0, 8))
         ttk.Label(file_row, text="小说文件", width=10).pack(side="left")
         ttk.Entry(file_row, textvariable=self.txt_path).pack(side="left", fill="x", expand=True, padx=8)
         ttk.Button(file_row, text="选择 TXT", command=self.choose_txt).pack(side="left")
 
-        encoding_row = ttk.Frame(root)
-        encoding_row.pack(fill="x", pady=6)
+        encoding_row = ttk.Frame(file_frame, style="Card.TFrame")
+        encoding_row.pack(fill="x")
         ttk.Label(encoding_row, text="文字编码", width=10).pack(side="left")
         encoding_box = ttk.Combobox(
             encoding_row,
@@ -372,48 +412,57 @@ class App(tk.Tk):
             width=16,
         )
         encoding_box.pack(side="left")
+        encoding_box.bind("<<ComboboxSelected>>", lambda _event: self.refresh_encoding_preview())
         ttk.Button(encoding_row, text="预览原文", command=self.preview_text).pack(side="left", padx=8)
-        ttk.Label(encoding_row, text="如果预览乱码，先换 GB18030 或 GBK。").pack(side="left")
+        ttk.Label(encoding_row, text="如果预览乱码，先换 GB18030 或 GBK。", style="Hint.TLabel").pack(side="left")
 
-        output_type_frame = ttk.LabelFrame(root, text="打印方式", padding=12)
-        output_type_frame.pack(fill="x", pady=12)
+        options = ttk.Frame(card, style="Card.TFrame")
+        options.pack(fill="both", expand=True, pady=14)
+
+        output_type_frame = ttk.LabelFrame(options, text="2. 打印方式", padding=14, style="Section.TLabelframe")
+        output_type_frame.pack(side="left", fill="both", expand=True, padx=(0, 8))
         ttk.Radiobutton(
             output_type_frame,
-            text="小册子打印：生成单页 PDF，打印时直接选择“小册子”。",
+            text="小册子打印",
             variable=self.output_type,
             value=OUTPUT_BOOKLET,
-        ).pack(anchor="w", pady=3)
+        ).pack(anchor="w", pady=(0, 4))
+        ttk.Label(output_type_frame, text="生成半张 A4 宽度页面，打印时选择“小册子”。", style="Hint.TLabel", wraplength=300).pack(anchor="w", padx=(24, 0), pady=(0, 10))
         ttk.Radiobutton(
             output_type_frame,
-            text="A4 两栏直接打印：一张 A4 已经排成左右两栏。",
+            text="A4 两栏直接打印",
             variable=self.output_type,
             value=OUTPUT_TWO_COLUMN,
-        ).pack(anchor="w", pady=3)
+        ).pack(anchor="w", pady=(0, 4))
+        ttk.Label(output_type_frame, text="一张横向 A4 已经排好左右两栏，适合直接打印。", style="Hint.TLabel", wraplength=300).pack(anchor="w", padx=(24, 0))
 
-        mode_frame = ttk.LabelFrame(root, text="排版模式", padding=12)
-        mode_frame.pack(fill="x", pady=12)
+        mode_frame = ttk.LabelFrame(options, text="3. 排版模式", padding=14, style="Section.TLabelframe")
+        mode_frame.pack(side="left", fill="both", expand=True, padx=(8, 0))
         for name in MODES:
             ttk.Radiobutton(
                 mode_frame,
-                text=f"{name}：{MODES[name].description}",
+                text=name,
                 variable=self.mode_name,
                 value=name,
-            ).pack(anchor="w", pady=3)
+            ).pack(anchor="w", pady=(0, 4))
+            ttk.Label(mode_frame, text=MODES[name].description, style="Hint.TLabel", wraplength=330).pack(anchor="w", padx=(24, 0), pady=(0, 8))
 
-        output_row = ttk.Frame(root)
-        output_row.pack(fill="x", pady=6)
+        output_frame = ttk.LabelFrame(card, text="4. 输出位置", padding=14, style="Section.TLabelframe")
+        output_frame.pack(fill="x")
+        output_row = ttk.Frame(output_frame, style="Card.TFrame")
+        output_row.pack(fill="x")
         ttk.Label(output_row, text="输出 PDF", width=10).pack(side="left")
         ttk.Entry(output_row, textvariable=self.output_path).pack(side="left", fill="x", expand=True, padx=8)
         ttk.Button(output_row, text="保存到", command=self.choose_output).pack(side="left")
 
-        button_row = ttk.Frame(root)
-        button_row.pack(fill="x", pady=(16, 8))
-        ttk.Button(button_row, text="生成 PDF", command=self.generate).pack(side="left")
+        button_row = ttk.Frame(card, style="Card.TFrame")
+        button_row.pack(fill="x", pady=(18, 10))
+        ttk.Button(button_row, text="生成 PDF", command=self.generate, style="Accent.TButton").pack(side="left")
         ttk.Button(button_row, text="打开 PDF", command=self.open_pdf).pack(side="left", padx=8)
         ttk.Button(button_row, text="直接打印", command=self.print_pdf).pack(side="left")
 
-        status = ttk.Label(root, textvariable=self.status, foreground="#245a8d", wraplength=640)
-        status.pack(anchor="w", pady=(12, 0))
+        status = ttk.Label(card, textvariable=self.status, style="Status.TLabel", wraplength=760)
+        status.pack(fill="x")
 
     def choose_txt(self):
         path = filedialog.askopenfilename(
